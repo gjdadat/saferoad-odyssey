@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="공공데이터를 기반으로 교통사고 다발지역 정보를 제공하고 보행자 안전 수칙을 미로 게임으로 체득하는 교통안전 웹 서비스입니다.">
+  <title>SafeRoad - 교통사고 예방 지도 및 등교 안전 미로</title>
+  
+  <!-- Font Awesome for premium icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts: Inter, Orbitron & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;500;700;900&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS for Maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""/>
+  
+  <!-- Custom Styling -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  
+  <!-- Header App Bar -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-logo">
+          <i class="fa-solid fa-shield-halved pulse-icon"></i>
+        </div>
+        <h1>SafeRoad</h1>
+        <span class="badge">공공데이터 & 등교 미로찾기</span>
+      </div>
+      
+      <!-- Center status bar / buttons -->
+      <div class="header-actions">
+        <!-- Live/Simulate Mode indicator Badge -->
+        <span id="modeIndicator" class="mode-badge simulate"><i class="fa-solid fa-circle-play"></i> 가상 체험 모드</span>
+        
+        <!-- Settings Gear Button -->
+        <button id="btnSettings" class="settings-btn" onclick="openSettingsModal()">
+          <i class="fa-solid fa-gear"></i> API 설정
+        </button>
+      </div>
+
+      <!-- Weather & Safety Warning Banner -->
+      <div class="warning-banner" id="warningBanner">
+        <i class="fa-solid fa-cloud-showers-heavy"></i>
+        <p id="warningText">실시간 정보: 현재 서울 지역 노면 습윤 상태. 과속은 금물입니다!</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+    
+    <!-- Grid Layout -->
+    <div class="dashboard-grid">
+      
+      <!-- Left Section: Interactive Map -->
+      <section class="card map-section" aria-labelledby="map-section-title">
+        <div class="card-header">
+          <div class="title-area">
+            <i class="fa-solid fa-map-location-dot text-primary"></i>
+            <h2 id="map-section-title">위험 지도</h2>
+          </div>
+          <span class="sub-text">사고 유형 필터를 탭하여 맞춤형 사고지를 확인하세요. 핀 클릭 시 우측 탭 대시보드의 데이터 및 게임 맵이 즉각 갱신됩니다.</span>
+        </div>
+        
+        <!-- Region Dropdown Selector Controls -->
+        <div class="region-controls">
+          <div class="control-group">
+            <span class="lbl"><i class="fa-solid fa-map"></i> 시도</span>
+            <select id="sidoSelect" onchange="updateGugunOptions()"></select>
+          </div>
+          <div class="control-group">
+            <span class="lbl"><i class="fa-solid fa-location-crosshairs"></i> 시군구</span>
+            <select id="gugunSelect"></select>
+          </div>
+          <button class="region-search-btn" onclick="searchRegionAccidents()">
+            <i class="fa-solid fa-magnifying-glass"></i> 조회
+          </button>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-controls" id="filterControls">
+
+          <button class="filter-btn active" data-type="all" id="btnFilterAll">
+            <i class="fa-solid fa-globe"></i> 전체
+          </button>
+          <button class="filter-btn" data-type="pedestrian" id="btnFilterPedestrian">
+            <i class="fa-solid fa-person-walking"></i> 보행자
+          </button>
+          <button class="filter-btn" data-type="child" id="btnFilterChild">
+            <i class="fa-solid fa-child-reaching"></i> 어린이 보호구역
+          </button>
+          <button class="filter-btn" data-type="elderly" id="btnFilterElderly">
+            <i class="fa-solid fa-person-cane"></i> 고령자
+          </button>
+          <button class="filter-btn" data-type="bicycle" id="btnFilterBicycle">
+            <i class="fa-solid fa-bicycle"></i> 자전거/PM
+          </button>
+        </div>
+
+        <!-- The Map Container -->
+        <div id="map" class="map-container"></div>
+      </section>
+
+      <!-- Right Section: Insights & Maze Game Tab Controller -->
+      <div class="insights-column">
+        
+        <!-- Tab Consolidated Container Card -->
+        <section class="card center-tab-section" id="centerTabCard" aria-label="통계 및 게임 센터">
+          
+          <!-- Card Tab Header -->
+          <div class="card-tab-header">
+            <div class="title-area">
+              <i class="fa-solid fa-chart-column" id="tabIconHeader"></i>
+              <h2 id="tabTitleHeader">데이터 & 플레이 센터</h2>
+            </div>
+            
+            <!-- Tab Menu Buttons -->
+            <div class="tab-menu" id="tabMenu">
+              <button class="tab-btn active" id="btnTabStat" onclick="switchTab('stat')">
+                <i class="fa-solid fa-chart-pie"></i> 피해 통계
+              </button>
+              <button class="tab-btn" id="btnTabGame" onclick="switchTab('game')">
+                <i class="fa-solid fa-gamepad"></i> 등교 미로
+              </button>
+            </div>
+          </div>
+
+          <!-- TAB 1 CONTENT: 피해 통계 대시보드 -->
+          <div class="tab-content-wrapper" id="tabStatContent">
+            <!-- Chart area -->
+            <div class="chart-wrapper">
+              <canvas id="accidentChart" aria-label="사고 피해 분석 차트" role="img"></canvas>
+              
+              <!-- Local Fallback HTML/CSS Chart Wrapper (when Chart.js fails to load) -->
+              <div id="fallbackChartWrapper" class="fallback-chart-container" style="display: none;">
+                <!-- Dynamically injected neon bar charts -->
+              </div>
+            </div>
+            
+            <div class="stat-summary" id="statSummary">
+              <!-- Dynamically populated stats -->
+            </div>
+          </div>
+
+          <!-- TAB 2 CONTENT: 등교 미로 게임 -->
+          <div class="tab-content-wrapper" id="tabGameContent" style="display: none;">
+            <div class="maze-game-container">
+              
+              <!-- Game HUD -->
+              <div class="maze-hud">
+                <div class="hud-item hp-status">
+                  <span class="lbl"><i class="fa-solid fa-heart text-danger"></i> HP</span>
+                  <div class="bar-outer">
+                    <div id="gameHpBar" class="bar-inner" style="width: 100%;"></div>
+                  </div>
+                  <span id="gameHpText" class="val">100</span>
+                </div>
+                <div class="hud-item signal-status">
+                  <span class="lbl"><i class="fa-solid fa-traffic-light"></i> 보행신호</span>
+                  <div id="pedestrianSignalLight" class="light-bulb red"></div>
+                </div>
+                <div class="hud-item score-status">
+                  <span class="lbl"><i class="fa-solid fa-star text-warning"></i> 점수</span>
+                  <span id="gameScoreText" class="val">0000</span>
+                </div>
+              </div>
+
+              <!-- The Grid Maze Board -->
+              <div class="maze-board-wrapper">
+                <div id="mazeBoard" class="maze-board"></div>
+                
+                <!-- Smombie Smartphone Overlay -->
+                <div id="smartphoneOverlay" class="smombie-overlay" style="display: none;">
+                  <div class="phone-case">
+                    <div class="phone-screen">
+                      <i class="fa-solid fa-mobile-screen-button pulse-icon"></i>
+                      <h4>스마트폰 위험 경고!</h4>
+                      <p>보행 중 스마트폰 확인은 전방 시야를 차단하여 사고를 유발합니다!</p>
+                      <p class="warning-text">※ 방향키가 반대로 꼬였습니다!</p>
+                      <button class="phone-btn" id="btnDisablePhone" onclick="disablePhoneScreen()">
+                        <i class="fa-solid fa-hand-pointer"></i> 폰 집어넣기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Message overlay (Game Over / Clear) -->
+                <div id="gameMessageOverlay" class="game-msg-overlay" style="display: none;">
+                  <div class="msg-box">
+                    <i id="msgIcon" class="fa-solid fa-trophy text-warning"></i>
+                    <h3 id="msgTitle">등교 완료!</h3>
+                    <p id="msgBody">안전하게 등교했습니다!</p>
+                    <button class="restart-game-btn" onclick="initMazeGame()">다시 도전</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Game Control Panel -->
+              <div class="game-control-panel">
+                <div class="legend-area">
+                  <div><span class="tile-sample sidewalk"></span> 인도</div>
+                  <div><span class="tile-sample road"></span> 차도</div>
+                  <div><span class="tile-sample wall"></span> 벽(건물)</div>
+                  <div><span class="tile-sample signal"></span> 횡단보도</div>
+                  <div><span class="tile-sample blind"></span> 사각지대</div>
+                </div>
+                
+                <!-- Virtual Keypad for Mobile -->
+                <div class="keypad">
+                  <button class="key-btn" onclick="movePlayer('up')"><i class="fa-solid fa-chevron-up"></i></button>
+                  <div class="keypad-middle">
+                    <button class="key-btn" onclick="movePlayer('left')"><i class="fa-solid fa-chevron-left"></i></button>
+                    <button class="key-btn" onclick="movePlayer('down')"><i class="fa-solid fa-chevron-down"></i></button>
+                    <button class="key-btn" onclick="movePlayer('right')"><i class="fa-solid fa-chevron-right"></i></button>
+                  </div>
+                </div>
+              </div>
+
+              <p class="key-instruction"><i class="fa-solid fa-keyboard"></i> PC 이용자는 키보드 방향키(↑, ↓, ←, →)로 조작 가능합니다.</p>
+
+            </div>
+          </div>
+
+        </section>
+
+        <!-- Selected Location Details Section -->
+        <section class="card detail-section" id="detailSection" aria-labelledby="detail-section-title">
+          <div class="card-header">
+            <div class="title-area">
+              <i class="fa-solid fa-circle-info text-info"></i>
+              <h2 id="detail-section-title">사고지 상세 정보</h2>
+            </div>
+          </div>
+          <div class="detail-content" id="detailContent">
+            <div class="empty-state">
+              <i class="fa-solid fa-map-pin"></i>
+              <p>지도의 핀을 탭하여 해당 구역의 상세 사고 통계와 예방 수칙을 확인하세요.</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- API Settings Modal Popup -->
+  <div id="settingsModal" class="modal-overlay" style="display: none;">
+    <div class="modal-case">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-key"></i> 공공데이터 API 설정</h3>
+        <button class="close-modal-btn" onclick="closeSettingsModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>공공데이터포털(data.go.kr)에서 발급받은 '도로교통공단 사고다발지정보' 일반 인증키(Decoding)를 입력하세요.</p>
+        <div class="input-row">
+          <input type="password" id="apiKeyInput" placeholder="공공데이터 API 인증키(Service Key) 입력">
+          <button class="toggle-visibility-btn" onclick="toggleApiKeyVisibility()" id="btnToggleVis">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+        <p class="modal-tip">※ 입력된 인증키는 브라우저 노출을 방지하기 위해 로컬 백엔드 서버(config.json)에만 안전하게 보관됩니다.</p>
+        
+        <div class="modal-actions">
+          <button class="modal-btn cancel" onclick="closeSettingsModal()">취소</button>
+          <button class="modal-btn save" onclick="saveApiKey()">저장하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <p>&copy; 2026 SafeRoad. All rights reserved.</p>
+      <p class="data-source-info">본 웹 서비스는 도로교통공단 교통사고 다발지역 오픈 API 명세를 준수하여 샘플링 및 재구성한 자료를 활용하고 있습니다.</p>
+    </div>
+  </footer>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+          
+  <!-- Chart.js for data visualization (Falls back to HTML graph on load fail) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Application Logic -->
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+

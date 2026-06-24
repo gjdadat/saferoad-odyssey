@@ -1,0 +1,14 @@
+{
+  "name": "saferoad-app",
+  "version": "1.0.0",
+  "description": "SafeRoad Public Data & Maze Game Fullstack Application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "private": true
+}
