@@ -163,7 +163,7 @@ window.searchRegionAccidents = function() {
   });
 
   // 3. 백엔드에서 해당 행정구역의 실시간 데이터 로드
-  loadBackendData(currentFilterType, sido, gugun);
+  loadBackendData(currentFilterType, sido, gugun, true);
 
   // 4. 상세 설명 초기화 및 미로 리셋
   resetLocationDetails();
@@ -193,7 +193,16 @@ async function fetchDirectFromPublicApi(filterType, sido, gugun, apiKey) {
   }
 
   const searchYear = "2022";
-  const targetApiUrl = `https://apis.data.go.kr/B552061/${endpoint}?serviceKey=${encodeURIComponent(apiKey)}&searchYearCd=${searchYear}&siDo=${sido}&guGun=${gugun}&type=json&numOfRows=10&pageNo=1`;
+  
+  // API 키가 인코딩되어 들어오는 경우 중복 인코딩 방지 처리
+  let finalApiKey = apiKey;
+  try {
+    finalApiKey = decodeURIComponent(apiKey);
+  } catch (e) {
+    finalApiKey = apiKey;
+  }
+
+  const targetApiUrl = `https://apis.data.go.kr/B552061/${endpoint}?serviceKey=${encodeURIComponent(finalApiKey)}&searchYearCd=${searchYear}&siDo=${sido}&guGun=${gugun}&type=json&numOfRows=10&pageNo=1`;
   
   // allorigins CORS 프록시 URL 조립
   const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApiUrl)}`;
@@ -234,7 +243,7 @@ async function fetchDirectFromPublicApi(filterType, sido, gugun, apiKey) {
   });
 }
 
-async function loadBackendData(filterType = "all", sido = "11", gugun = "680") {
+async function loadBackendData(filterType = "all", sido = "11", gugun = "680", isExplicitSearch = false) {
   const modeBadge = document.getElementById("modeIndicator");
   currentFilterType = filterType;
   
@@ -276,6 +285,9 @@ async function loadBackendData(filterType = "all", sido = "11", gugun = "680") {
         return;
       } catch (directErr) {
         console.error("Direct public API fetch failed:", directErr);
+        if (isExplicitSearch) {
+          alert(`실시간 공공데이터 API 호출에 실패하여 가상 체험 모드로 실행됩니다.\n\n[에러 내용]: ${directErr.message}\n\n※ 확인 사항:\n1. 공공데이터포털에서 API 신청 후 승인이 나기까지 최대 1~2시간이 소요됩니다.\n2. 인증키(Decoding 키 권장)가 올바르게 입력되었는지 확인해 주세요.\n3. 학교/관공서 등 내부 네트워크 환경에서는 외부 CORS 프록시 서버 접속이 차단되어 실시간 연동이 작동하지 않을 수 있습니다.`);
+        }
       }
     }
     
@@ -391,7 +403,7 @@ function setupFilterEventListeners() {
       const sido = document.getElementById("sidoSelect")?.value || "11";
       const gugun = document.getElementById("gugunSelect")?.value || "680";
       
-      loadBackendData(filterType, sido, gugun);
+      loadBackendData(filterType, sido, gugun, true);
       
       resetLocationDetails();
       initMazeGame(null);
@@ -447,7 +459,7 @@ function updateChartData(filterType = "all", singleLocationData = null, preloade
   if (!preloaded && !singleLocationData) {
     const sido = document.getElementById("sidoSelect")?.value || "11";
     const gugun = document.getElementById("gugunSelect")?.value || "680";
-    loadBackendData(filterType, sido, gugun);
+    loadBackendData(filterType, sido, gugun, false);
     return;
   }
 
