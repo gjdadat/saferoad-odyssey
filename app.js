@@ -162,6 +162,64 @@ window.searchRegionAccidents = function() {
 // 2. Leaflet 지도 및 차트 대시보드 로직 (백엔드 연동 및 로컬 폴백 하이브리드)
 // ==========================================================================
 
+// CORS 프록시를 경유하여 공공데이터 포털 OpenAPI 직접 호출하는 클라이언트 헬퍼
+async function fetchDirectFromPublicApi(filterType, sido, gugun, apiKey) {
+  let endpoint = "frequentzonePedestrian/getRestFrequentzonePedestrian";
+  let typeName = "보행자 사고 다발지역";
+  
+  if (filterType === 'child') {
+    endpoint = "frequentzoneChild/getRestFrequentzoneChild";
+    typeName = "어린이 보호구역 내 사고지역";
+  } else if (filterType === 'elderly') {
+    endpoint = "frequentzoneOldman/getRestFrequentzoneOldman";
+    typeName = "고령자 사고 다발지역";
+  } else if (filterType === 'bicycle') {
+    endpoint = "frequentzoneBicycle/getRestFrequentzoneBicycle";
+    typeName = "자전거/이륜차 사고 다발지역";
+  }
+
+  const searchYear = "2022";
+  const targetApiUrl = `https://apis.data.go.kr/B552061/${endpoint}?serviceKey=${encodeURIComponent(apiKey)}&searchYearCd=${searchYear}&siDo=${sido}&guGun=${gugun}&type=json&numOfRows=10&pageNo=1`;
+  
+  // allorigins CORS 프록시 URL 조립
+  const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApiUrl)}`;
+  
+  const response = await fetch(corsProxyUrl);
+  if (!response.ok) {
+    throw new Error(`공공 API 요청 실패: ${response.status}`);
+  }
+  
+  const json = await response.json();
+  if (!json.items || !json.items.item || json.items.item.length === 0) {
+    throw new Error("조회된 실시간 공공데이터가 없습니다.");
+  }
+  
+  const rawItems = Array.isArray(json.items.item) ? json.items.item : [json.items.item];
+  return rawItems.map((item, idx) => {
+    const lat = parseFloat(item.la_crd);
+    const lng = parseFloat(item.lo_crd);
+    
+    const accidentCount = parseInt(item.occrrnc_cnt) || 0;
+    const deathCount = parseInt(item.dth_dnv_cnt) || 0;
+    const heavyInjuryCount = parseInt(item.se_dnv_cnt) || 0;
+    const lightInjuryCount = parseInt(item.slInfo_dnv_cnt) || 0;
+
+    return {
+      id: idx + 100,
+      locationName: item.spot_nm.trim(),
+      type: filterType === 'all' ? 'pedestrian' : filterType,
+      typeName: typeName,
+      lat: lat,
+      lng: lng,
+      accidentCount: accidentCount,
+      deathCount: deathCount,
+      heavyInjuryCount: heavyInjuryCount,
+      lightInjuryCount: lightInjuryCount,
+      description: `실시간 공공데이터 연동 구역입니다. 총 ${accidentCount}건의 사고가 발생했으며, 횡단 시 시야 각별 유의하십시오.`
+    };
+  });
+}
+
 async function loadBackendData(filterType = "all", sido = "11", gugun = "680") {
   const modeBadge = document.getElementById("modeIndicator");
   currentFilterType = filterType;
@@ -188,7 +246,26 @@ async function loadBackendData(filterType = "all", sido = "11", gugun = "680") {
     updateChartData(filterType, null, true);
 
   } catch (err) {
-    console.log("Backend not running or request failed. Generating client-side local data fallback.");
+    console.log("Backend not running or request failed. Checking local API key for direct fetch...");
+    
+    const localApiKey = localStorage.getItem('safeRoadApiKey');
+    if (localApiKey) {
+      try {
+        const directData = await fetchDirectFromPublicApi(filterType, sido, gugun, localApiKey);
+        trafficAccidentData = directData;
+        
+        modeBadge.className = "mode-badge realtime";
+        modeBadge.innerHTML = '<i class="fa-solid fa-wifi"></i> 실시간 공공데이터 연동 중 (웹)';
+        
+        renderMarkers(filterType, true);
+        updateChartData(filterType, null, true);
+        return;
+      } catch (directErr) {
+        console.error("Direct public API fetch failed:", directErr);
+      }
+    }
+    
+    // Fallback to Simulation Mode if direct fetch fails or no API key exists
     modeBadge.innerHTML = '<i class="fa-solid fa-circle-play"></i> 가상 체험 모드';
     modeBadge.className = "mode-badge simulate";
     
@@ -880,22 +957,24 @@ function triggerFeedbackAlert(title, text, isDanger = false) {
 }
 
 // ==========================================================================
-// 4. API 키 설정 모달 제어 로직 (백엔드 연동)
+// 4. API 키 설정 모달 제어 로직 (백엔드 연동 및 로컬스토리지 하이브리드)
 // ==========================================================================
 
 window.openSettingsModal = function() {
   const modal = document.getElementById("settingsModal");
   modal.style.display = "flex";
-  document.getElementById("apiKeyInput").value = "";
+  
+  // 이미 저장된 API 키가 있다면 불러오기
+  const localApiKey = localStorage.getItem('safeRoadApiKey');
+  document.getElementById("apiKeyInput").value = localApiKey || "";
   
   // 정적 웹 호스팅 환경(GitHub Pages, file:// 프로토콜 등) 감지
   const isStaticHost = window.location.hostname.endsWith('github.io') || window.location.protocol === 'file:';
   const modalTip = document.querySelector(".modal-tip");
-  const saveBtn = document.querySelector(".modal-btn.save");
   
   if (isStaticHost && modalTip) {
-    modalTip.style.color = "#f43f5e"; // 연한 분홍/빨강 강조색
-    modalTip.innerHTML = `⚠️ <strong>안내:</strong> 현재 GitHub Pages(정적 호스팅) 환경에서 실행 중이므로 백엔드(Node.js) 서버가 작동하지 않습니다. 실시간 API 연동을 사용하려면 로컬 PC나 Node.js 호스팅 환경에서 구동하셔야 합니다. 현재는 <strong>가상 체험 모드</strong>로 온전히 동작합니다.`;
+    modalTip.style.color = "#a855f7"; // 보라색 강조색
+    modalTip.innerHTML = `ℹ️ <strong>안내:</strong> 현재 GitHub Pages(정적 호스팅) 환경으로 실행 중입니다. 입력하신 인증키는 서버가 아닌 <strong>브라우저 저장소(LocalStorage)</strong>에 개별 저장되어 공공데이터 API를 직접 호출합니다.`;
   } else if (modalTip) {
     modalTip.style.color = "#94a3b8"; // 기존 기본 색상
     modalTip.innerHTML = `※ 입력된 인증키는 브라우저 노출을 방지하기 위해 로컬 백엔드 서버(config.json)에만 안전하게 보관됩니다.`;
@@ -920,16 +999,27 @@ window.toggleApiKeyVisibility = function() {
 
 window.saveApiKey = async function() {
   const apiKey = document.getElementById("apiKeyInput").value.trim();
+  const isStaticHost = window.location.hostname.endsWith('github.io') || window.location.protocol === 'file:';
+
   if (!apiKey) {
+    // 정적 호스팅 환경에서 빈 입력값을 제출하면 키 삭제 및 가상모드 전환
+    if (isStaticHost) {
+      localStorage.removeItem('safeRoadApiKey');
+      alert("인증키가 삭제되었습니다. 가상 체험 모드로 실행됩니다.");
+      closeSettingsModal();
+      location.reload();
+      return;
+    }
     alert("인증키를 입력해 주세요.");
     return;
   }
 
-  // 정적 호스팅 환경 감지 및 차단
-  const isStaticHost = window.location.hostname.endsWith('github.io') || window.location.protocol === 'file:';
+  // 정적 호스팅 환경인 경우 로컬스토리지에 저장하고 다이렉트 연동 활성화
   if (isStaticHost) {
-    alert("현재 사이트는 GitHub Pages(정적 호스팅)로 실행 중이어서 API 키를 저장할 수 없습니다.\n\n실시간 공공데이터를 연동하고 싶으시다면, 로컬 PC 터미널에서 'node server.js' 명령어로 서버를 띄운 후 http://localhost:3000 으로 접속하여 입력해 주셔야 합니다.\n\n이 사이트에서는 '가상 체험 모드'로 테스트를 진행해 주세요!");
+    localStorage.setItem('safeRoadApiKey', apiKey);
+    alert("성공: API 인증키가 브라우저 로컬 저장소(LocalStorage)에 안전하게 저장되었습니다.\n실시간 공공데이터 연동을 시작합니다!");
     closeSettingsModal();
+    location.reload();
     return;
   }
 
