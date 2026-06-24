@@ -22,6 +22,20 @@ let signalInterval = null;
 let gameTimeInterval = null;
 let blindSpotTimeout = null;
 
+// 3. 지도 초기화 함수
+function initMap() {
+  // 서울 강남구 기준 초기화
+  map = L.map("map").setView([37.4979, 127.0276], 13);
+
+  // 어두운 테마에 어울리는 CartoDB Dark Matter 타일 레이어 적용
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(map);
+
+  markerLayerGroup = L.layerGroup().addTo(map);
+}
+
 // DOM Load 완료 시 실행
 document.addEventListener("DOMContentLoaded", () => {
   // A. 지도 초기화
