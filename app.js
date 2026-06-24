@@ -204,10 +204,9 @@ async function fetchDirectFromPublicApi(filterType, sido, gugun, apiKey) {
 
   const targetApiUrl = `https://apis.data.go.kr/B552061/${endpoint}?serviceKey=${encodeURIComponent(finalApiKey)}&searchYearCd=${searchYear}&siDo=${sido}&guGun=${gugun}&type=json&numOfRows=10&pageNo=1`;
   
-  // 프록시 목록 (1차: allorigins, 2차: corsproxy.io, 3차: codetabs)
   const proxyList = [
     url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://corsproxy.io/?${url}`,
     url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
   ];
 
