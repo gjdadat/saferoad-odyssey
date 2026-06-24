@@ -204,43 +204,81 @@ async function fetchDirectFromPublicApi(filterType, sido, gugun, apiKey) {
 
   const targetApiUrl = `https://apis.data.go.kr/B552061/${endpoint}?serviceKey=${encodeURIComponent(finalApiKey)}&searchYearCd=${searchYear}&siDo=${sido}&guGun=${gugun}&type=json&numOfRows=10&pageNo=1`;
   
-  // allorigins CORS 프록시 URL 조립
-  const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetApiUrl)}`;
-  
-  const response = await fetch(corsProxyUrl);
-  if (!response.ok) {
-    throw new Error(`공공 API 요청 실패: ${response.status}`);
-  }
-  
-  const json = await response.json();
-  if (!json.items || !json.items.item || json.items.item.length === 0) {
-    throw new Error("조회된 실시간 공공데이터가 없습니다.");
-  }
-  
-  const rawItems = Array.isArray(json.items.item) ? json.items.item : [json.items.item];
-  return rawItems.map((item, idx) => {
-    const lat = parseFloat(item.la_crd);
-    const lng = parseFloat(item.lo_crd);
-    
-    const accidentCount = parseInt(item.occrrnc_cnt) || 0;
-    const deathCount = parseInt(item.dth_dnv_cnt) || 0;
-    const heavyInjuryCount = parseInt(item.se_dnv_cnt) || 0;
-    const lightInjuryCount = parseInt(item.slInfo_dnv_cnt) || 0;
+  // 프록시 목록 (1차: allorigins, 2차: corsproxy.io, 3차: codetabs)
+  const proxyList = [
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+  ];
 
-    return {
-      id: idx + 100,
-      locationName: item.spot_nm.trim(),
-      type: filterType === 'all' ? 'pedestrian' : filterType,
-      typeName: typeName,
-      lat: lat,
-      lng: lng,
-      accidentCount: accidentCount,
-      deathCount: deathCount,
-      heavyInjuryCount: heavyInjuryCount,
-      lightInjuryCount: lightInjuryCount,
-      description: `실시간 공공데이터 연동 구역입니다. 총 ${accidentCount}건의 사고가 발생했으며, 횡단 시 시야 각별 유의하십시오.`
-    };
-  });
+  let lastError = null;
+
+  for (let i = 0; i < proxyList.length; i++) {
+    const corsProxyUrl = proxyList[i](targetApiUrl);
+    try {
+      console.log(`CORS Proxy ${i + 1}/${proxyList.length} 시도 중: ${corsProxyUrl}`);
+      const response = await fetch(corsProxyUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP 상태코드 ${response.status}`);
+      }
+      
+      const text = await response.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (parseErr) {
+        // 공공데이터 API 인증 실패 시 간혹 XML로 반환하는 에러 메시지 추출
+        if (text.includes("errMsg") || text.includes("returnAuthMsg")) {
+          const authMsg = text.match(/<returnAuthMsg>(.*?)<\/returnAuthMsg>/)?.[1] || "";
+          const errMsg = text.match(/<errMsg>(.*?)<\/errMsg>/)?.[1] || "";
+          throw new Error(`공공 API 인증 에러: ${authMsg || errMsg}`);
+        }
+        throw new Error("올바른 JSON 응답이 아닙니다. (서버 응답 오류)");
+      }
+      
+      if (json.cmmMsgHeader || json.OpenAPI_ServiceResponse) {
+        const header = json.cmmMsgHeader || json.OpenAPI_ServiceResponse.cmmMsgHeader;
+        if (header && header.returnReasonCode && header.returnReasonCode !== "00") {
+          throw new Error(`공공 API 에러: ${header.returnAuthMsg} (${header.returnReasonCode})`);
+        }
+      }
+
+      if (!json.items || !json.items.item || json.items.item.length === 0) {
+        throw new Error("조회된 실시간 공공데이터가 없습니다.");
+      }
+      
+      const rawItems = Array.isArray(json.items.item) ? json.items.item : [json.items.item];
+      return rawItems.map((item, idx) => {
+        const lat = parseFloat(item.la_crd);
+        const lng = parseFloat(item.lo_crd);
+        
+        const accidentCount = parseInt(item.occrrnc_cnt) || 0;
+        const deathCount = parseInt(item.dth_dnv_cnt) || 0;
+        const heavyInjuryCount = parseInt(item.se_dnv_cnt) || 0;
+        const lightInjuryCount = parseInt(item.slInfo_dnv_cnt) || 0;
+
+        return {
+          id: idx + 100,
+          locationName: item.spot_nm.trim(),
+          type: filterType === 'all' ? 'pedestrian' : filterType,
+          typeName: typeName,
+          lat: lat,
+          lng: lng,
+          accidentCount: accidentCount,
+          deathCount: deathCount,
+          heavyInjuryCount: heavyInjuryCount,
+          lightInjuryCount: lightInjuryCount,
+          description: `실시간 공공데이터 연동 구역입니다. 총 ${accidentCount}건의 사고가 발생했으며, 횡단 시 시야 각별 유의하십시오.`
+        };
+      });
+    } catch (err) {
+      console.warn(`CORS Proxy ${i + 1} 실패:`, err);
+      lastError = err;
+      // 다음 프록시로 계속 시도
+    }
+  }
+
+  throw new Error(`${lastError ? lastError.message : '네트워크 프록시 연결 끊김'}`);
 }
 
 async function loadBackendData(filterType = "all", sido = "11", gugun = "680", isExplicitSearch = false) {
